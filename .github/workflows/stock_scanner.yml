@@ -1,0 +1,48 @@
+name: Taiwan Stock Scanner & Line Push
+
+on:
+  schedule:
+    # 台灣時間 (UTC+8) 週一至週五：
+    # 1. 盤前 08:35 (UTC 00:35)
+    - cron: '35 0 * * 1-5'
+    # 2. 盤後 15:30 (UTC 07:30)
+    - cron: '30 7 * * 1-5'
+  workflow_dispatch: # 支援手動觸發測試
+
+permissions:
+  contents: write
+
+jobs:
+  run-scanner:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 檢出程式碼庫 (Checkout)
+        uses: actions/checkout@v4
+
+      - name: 🐍 設定 Python 3.11 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 安裝依賴套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy requests lxml html5lib
+
+      - name: 🚀 執行當沖量化與推播腳本
+        env:
+          LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python tw_stock_scanner.py
+
+      - name: 💾 自動 Commit 歷史資料（若有更新）
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add history_picks.csv macro_economic_cache.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 自動備份每日當沖歷史推薦 [$(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M')]" && git push)
